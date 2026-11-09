@@ -12,12 +12,12 @@ A Windows helper for the Chimera and Hydra fights in **RAID: Shadow Legends**: w
 
 **RAID: Shadow Legends** 奇美拉与六头蛇战斗的 Windows 助手：为队伍编写技能规则，让工具按规则出手，并在实战前离线检验规则。
 
-Current version: **1.1.3** ([release notes / notas da versão](docs/1.1.3-release-notes.md)) · 当前版本：**1.1.3**（[更新说明](docs/1.1.3-release-notes.md)）
+Current version: **1.1.5** ([release notes / notas da versão](docs/1.1.5-release-notes.md)) · 当前版本：**1.1.5**（[更新说明](docs/1.1.5-release-notes.md)）
 
 ## Getting started / 开始使用
 
-1. Download `RSL-Boss-helper-1.1.3.exe` from the latest release and run it; no installation is needed (Windows x64 with the Microsoft Edge WebView2 Runtime).<br>
-   从最新版本下载 `RSL-Boss-helper-1.1.3.exe` 直接运行，无需安装（Windows x64，需要 Microsoft Edge WebView2 运行库）。
+1. Download `RSL-Boss-helper-1.1.5.exe` from the latest release and run it; no installation is needed (Windows x64 with the Microsoft Edge WebView2 Runtime).<br>
+   从最新版本下载 `RSL-Boss-helper-1.1.5.exe` 直接运行，无需安装（Windows x64，需要 Microsoft Edge WebView2 运行库）。
 2. Start RAID, pick your account in the tool and choose Chimera or Hydra. Open the boss preparation screen and the tool reads your team.<br>
    打开游戏，在工具中选择账号和奇美拉或六头蛇模式。打开 Boss 准备界面，工具会读取你的队伍。
 3. Write rules in **Action rules** (or import a strategy someone shared) and set **Battle Goals**. On the preparation screen, click **Start** under **Controller**: the tool starts the battle and plays it from the opening.<br>
@@ -25,16 +25,12 @@ Current version: **1.1.3** ([release notes / notas da versão](docs/1.1.3-releas
 4. After updating the tool, restart the game once. Your strategies are kept in `%LOCALAPPDATA%\RSL-Boss-helper` and carried over from earlier versions automatically.<br>
    更新工具后请重启一次游戏。策略保存在 `%LOCALAPPDATA%\RSL-Boss-helper`，旧版本的策略会自动带过来。
 
-## What's new in 1.1.3 / 1.1.3 新功能
+## What's new in 1.1.5 / 1.1.5 新功能
 
-- **Simulate any difficulty:** Hydra and Chimera simulations are built from the game's own stage data, so you can test your rules on a difficulty you have not fought yet. For the Chimera you can also set the Boss's starting HP. Take over one battle from the opening once; after a Boss rotation, take over another battle from its opening to update it.<br>
-  **任意难度模拟：** 六头蛇和奇美拉的模拟按游戏自带的关卡数据生成，没打过的难度也能检验规则；奇美拉还能设置 Boss 开打血量。只需用工具从开局接管过一场战斗；Boss 轮换后再从开局接管一场即可更新。
-- **Rule target checks:** the rule editor checks each skill's valid targets from the game data, marks targets the skill cannot reach and asks before applying such a rule. The run log explains rules skipped because their target was unavailable; simulation reports list those rules and their counts.<br>
-  **规则目标检查：** 规则编辑器按游戏数据检查技能能选的目标，标出技能够不到的目标并在应用前确认；运行日志说明因目标不可选而跳过的规则，模拟报告列出对应规则与次数。
-- **Richer simulation reports:** filter the action log by buffs and debuffs, Chimera trials and forms or Hydra head types; see which enemy actions hit a champion, remaining shields and other absorb values, and actual hits when some enemy skills choose a different target; switch runs or jump to where a run stopped.<br>
-  **更详细的模拟报告：** 出手记录可按增益/减益、奇美拉试炼与形态、六头蛇蛇头类型筛选；查看英雄被哪些敌人出手打到、护盾等吸收值的剩余量，以及部分敌方技能重新选取的实际命中目标；可切换场次或跳到卡住的位置。
-- **Also:** a fix for a game crash when saving a team picked from the roster (restart the game after updating), rule conditions explained in plain words, a tidier main window, team picker improvements and report fixes.<br>
-  **其他：** 修复保存自选队伍时游戏崩溃（更新后请重启游戏），规则条件改用文字解释，主界面整理，选人器改进，以及报告显示修复。
+- **"Save it for the last action before the Boss" (Chimera):** a new rule option below **Common triggers**. When a champion acts more than once before the Boss's next turn, the skill is cast on its last action, so buffs and debuffs last one more turn. It needs a simulation: Strategy Simulation, or the opening simulation in live battles.<br>
+  **「留到 Boss 行动前的最后一次行动再施放」（奇美拉）：** 规则编辑器「常用触发条件」下方的新选项。英雄在 Boss 下一次行动前行动不止一次时，把技能留到最后一次行动施放，让增益/减益多持续一回合。需要模拟才能判断：策略模拟，或实战中的开局模拟。
+- **Game detection fix:** some older game installs were not detected (**No Raid account found**). The game is now recognised by its own files, on any drive.<br>
+  **修复游戏识别：** 部分较早安装的游戏无法被识别（「没有找到 Raid 账户」）。现在按游戏文件本身识别，装在哪个盘都可以。
 
 ## Features / 主要功能
 

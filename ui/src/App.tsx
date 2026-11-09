@@ -7,7 +7,8 @@ import { DecisionRows } from './DecisionRows'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { TeamPreviewDialog, TeamPreviewSummary, type TeamPreviewSummaryState, type TeamSnapshot } from './TeamPreview'
 import { TeamPicker, type ChosenTeam, type RosterHero } from './TeamPicker'
-import { loadHeroData, withoutStrength, type HeroData } from './heroData'
+import { championId, loadHeroData, withoutStrength, type HeroData } from './heroData'
+import { HeroAvatar, HeroAvatarRevisionProvider } from './HeroAvatar'
 import { ruleTargetMismatches, skillReach, targetFits, type TargetMismatch } from './ruleTargets'
 import { describeRuleConditions, type RuleDescriptionContext } from './ruleDescriptions'
 import { canMoveRule, logDrawerPreference, revealRuleAfterRender } from './ruleNavigation'
@@ -197,6 +198,8 @@ type Rule = {
   name?: string
   when?: JsonObject
   action?: JsonObject
+  // Chimera casts: fire on the hero's last action before the Boss's next turn (needs a simulation).
+  lastTurnBeforeBoss?: boolean
 }
 
 type DefaultSkillPolicyDraft = {
@@ -1059,23 +1062,6 @@ function conditionLabel(rule: Rule, effects: EffectOption[] = [], heroes: Hero[]
   return conditionDescription(rule, effects, heroes, trials).full
 }
 
-function HeroAvatar({ hero, size = 'md' }: { hero?: Hero; size?: 'sm' | 'md' | 'lg' }) {
-  const [sourceIndex, setSourceIndex] = useState(0)
-  const sources = hero
-    ? [`/api/asset/hero/${hero.typeId}`, `/hero-fallbacks/${hero.typeId}.png`]
-    : []
-  useEffect(() => setSourceIndex(0), [hero?.typeId])
-  return (
-    <span className={`avatar avatar-${size}`} aria-hidden="true">
-      {hero && sourceIndex < sources.length ? (
-        <img src={sources[sourceIndex]} alt="" loading="lazy" decoding="async" onError={() => setSourceIndex((current) => current + 1)} />
-      ) : (
-        <span>{hero?.name?.slice(0, 1) || '?'}</span>
-      )}
-    </span>
-  )
-}
-
 function HydraHeadIcon({ head, size = 'md' }: { head?: HydraHead; size?: 'sm' | 'md' | 'lg' }) {
   const [failed, setFailed] = useState(false)
   const identity = head?.canonicalTypeId ?? head?.typeId
@@ -1477,6 +1463,7 @@ function RuleEditor({
   const [turnMin, setTurnMin] = useState('')
   const [turnMax, setTurnMax] = useState('')
   const [switchWithin, setSwitchWithin] = useState('')
+  const [lastTurn, setLastTurn] = useState(false)
   const [nextForm, setNextForm] = useState('')
   const [eligibleTrialId, setEligibleTrialId] = useState(0)
   const [damageMin, setDamageMin] = useState('')
@@ -1488,7 +1475,7 @@ function RuleEditor({
   const [editorVersion, setEditorVersion] = useState(0)
   const editorBaseline = useRef('')
   const editorSnapshot = JSON.stringify({ name, ruleKind, heroId, allHeroes, forms, heroForm, actionType, slot, skillTypeId,
-    defaultPolicies, target, targetPosition, headPriorityIds, advanced, turnMin, turnMax, switchWithin, nextForm, eligibleTrialId, damageMin, conditionTree })
+    defaultPolicies, target, targetPosition, headPriorityIds, advanced, turnMin, turnMax, switchWithin, lastTurn, nextForm, eligibleTrialId, damageMin, conditionTree })
   useLayoutEffect(() => { if (open && editorVersion > 0) editorBaseline.current = editorSnapshot }, [editorVersion, open])
   function requestEditorOpenChange(next: boolean) {
     if (!next && editorBaseline.current && editorSnapshot !== editorBaseline.current) { setConfirmDiscard(true); return }
@@ -1551,6 +1538,7 @@ function RuleEditor({
     setTurnMin(turnAtLeast == null ? '' : String(turnAtLeast))
     setTurnMax(turnAtMost == null ? '' : String(turnAtMost))
     setSwitchWithin(when.turnsUntilFormChangeAtMost == null ? '' : String(when.turnsUntilFormChangeAtMost))
+    setLastTurn(initial?.lastTurnBeforeBoss === true)
     setNextForm(typeof when.nextForm === 'string' ? when.nextForm : '')
     const savedEligibleTrials = asNumberArray(when.eligibleTrialsAny)
     setEligibleTrialId(savedEligibleTrials.length === 1 ? savedEligibleTrials[0] : 0)
@@ -2136,7 +2124,8 @@ function RuleEditor({
       const autoName = ruleKind === 'default'
         ? tr('app.defaultSkillOrderOf', { name: hero?.name ?? tr('app.champion2') })
         : `${hero?.name ?? tr('app.champion2')} · ${actionType === 'transform' ? tr('app.switchForm') : actionLabel({ when, action }, heroes)} → ${targetLabel({ when, action }, heroes, hydraHeads)}`
-      onSave({ name: name.trim() || autoName, when, action })
+      const waitsForLastTurn = lastTurn && bossMode === 'chimera' && ruleKind === 'strict' && actionType === 'cast'
+      onSave({ name: name.trim() || autoName, when, action, ...(waitsForLastTurn ? { lastTurnBeforeBoss: true } : {}) })
       onOpenChange(false)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -2414,6 +2403,11 @@ function RuleEditor({
                 {bossMode === 'chimera' && <label className="field trial-active-condition"><span>{tr('app.onlyWhileThisTrialIs')}<small>{tr('app.theRuleIsIgnoredWhen')}</small></span><select value={eligibleTrialId || ''} onChange={(event) => setEligibleTrialId(Number(event.target.value) || 0)}><option value="">{tr('app.anyTrialState')}</option>{eligibleTrialId > 0 && !trials.some((trial) => trial.id === eligibleTrialId) && <option value={eligibleTrialId}>{tr('app.savedTrial', { eligibleTrialId })}</option>}{trials.map((trial) => <option key={trial.id} value={trial.id}>{formLabel(trial.form ?? '') ?? trial.form ?? tr('app.chimera')} · {trialLevel(trial.difficulty ?? '') ?? trial.difficulty ?? tr('app.trial2')} · {gameDescription(trial.description) || tr('app.trial3', { id: trial.id })}</option>)}</select></label>}
               </div>
             </fieldset>
+            {/* Chimera casts: wait for the hero's last action before the Boss (tools: wait_for_last_turn). */}
+            {bossMode === 'chimera' && ruleKind === 'strict' && actionType === 'cast' && <button type="button" className={`devour-forecast-toggle last-turn-toggle span-2 ${lastTurn ? 'selected' : ''}`} aria-pressed={lastTurn} onClick={() => setLastTurn((value) => !value)}>
+              <span className="check-box">{lastTurn && <Check size={14} />}</span>
+              <span><strong>{tr('app.lastTurnBeforeBoss')}</strong><small>{tr('app.lastTurnBeforeBossHint')}</small></span>
+            </button>}
             <fieldset className="effect-condition-builder condition-tree-builder span-2">
               <legend>{tr('app.conditionLogic')}</legend>
               <div className="effect-condition-heading">
@@ -2668,6 +2662,7 @@ function App() {
     setData(current => current ? {
       ...current,
       storageHealth: next.storageHealth ?? current.storageHealth,
+      catalogRevision: next.catalogRevision ?? current.catalogRevision,
       heroes: next.heroes ?? current.heroes,
       hydraHeads: next.hydraHeads ?? current.hydraHeads,
       effects: next.effects ?? current.effects,
@@ -2692,9 +2687,15 @@ function App() {
     }
   }, [bossMode, live.chimeraDifficultyId])
 
+  const [heroData, setHeroData] = useState<HeroData | null>(null)
+  const heroDataRevisionAttempts = useRef(new Set<string>())
   const heroes = data?.heroes ?? []
-  const heroNameOf = useCallback((typeId: number) => heroByRuntimeId(heroes, typeId)?.name ?? (tr('app.champion4', { typeId })), [heroes, language])
-  const heroAvatarOf = useCallback((typeId: number) => <HeroAvatar hero={heroByRuntimeId(heroes, typeId)} size="md" />, [heroes])
+  const heroNameOf = useCallback((typeId: number) => heroByRuntimeId(heroes, typeId)?.name
+    || heroData?.heroes[String(championId(typeId))]?.name
+    || tr('app.champion4', { typeId }), [heroes, heroData, language])
+  const avatarRevision = `${data?.catalogRevision ?? ''}:${heroData ? 'ready' : 'loading'}`
+  const heroAvatarOf = useCallback((typeId: number) => <HeroAvatar hero={heroByRuntimeId(heroes, typeId)} typeId={typeId}
+    name={heroNameOf(typeId)} revision={avatarRevision} size="md" />, [heroes, heroNameOf, avatarRevision])
   const hydraHeads = data?.hydraHeads ?? []
   const effects = data?.effects ?? []
   const rules = config.rules ?? []
@@ -2711,13 +2712,16 @@ function App() {
   const strategyTeamIds = config.team?.heroTypeIds ?? config.team?.heroIds ?? []
   const team = strategyTeamIds.length ? strategyTeamIds : live.teamHeroIds ?? []
   // Who each skill can target, for the rule target warnings.
-  const [heroData, setHeroData] = useState<HeroData | null>(null)
   useEffect(() => {
+    if (heroData) return
+    const attemptKey = `${selectedPid ?? ''}:${data?.catalogRevision ?? ''}`
+    if (heroDataRevisionAttempts.current.has(attemptKey)) return
+    heroDataRevisionAttempts.current.add(attemptKey)
     let current = true
-    void loadPickerHeroData().then((value) => { if (current && value) setHeroData(value) })
+    void loadPickerHeroData().then((value) => { if (current && value) setHeroData(value) }).catch(() => undefined)
     return () => { current = false }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPid])
+  }, [selectedPid, data?.catalogRevision, heroData])
   const activeModeSpec = data?.modes.find((mode) => mode.id === bossMode)
   const teamSize = activeModeSpec?.teamSize ?? (bossMode === 'hydra' ? 6 : 5)
   // The full team on the preparation screen now, to set as the strategy's team.
@@ -2913,9 +2917,16 @@ function App() {
   }
 
   // Champion search tags and profiles, read once from the game's static data.
-  function loadPickerHeroData() {
-    const query = selectedPid === null || selectedPid === undefined ? '' : `?pid=${selectedPid}`
+  function loadPickerHeroData(retry = false) {
+    const params = new URLSearchParams()
+    if (selectedPid !== null && selectedPid !== undefined) params.set('pid', String(selectedPid))
+    if (retry) params.set('retry', '1')
+    const query = params.size ? `?${params}` : ''
     return loadHeroData(() => api<{ status: string; data?: HeroData; reason?: string }>(`/api/hero-data${query}`))
+      .then((value) => {
+        if (value) setHeroData(value)
+        return value
+      })
   }
 
   async function beginRename() {
@@ -3160,6 +3171,7 @@ function App() {
 
   return (
     <I18nProvider locale={language}>
+    <HeroAvatarRevisionProvider value={avatarRevision}>
     <div className="app-shell">
       <header className="topbar">
         <div className="brand" data-i18n-skip><span className="brand-mark"><img src="/app-icon.png" alt="" /></span><span><strong>{APP_NAME}</strong><small>{__APP_VERSION__}</small></span></div>
@@ -3307,6 +3319,7 @@ function App() {
                       {bossMode === 'chimera' && usageMatches && <em className={`sim-usage${usage.uses > 0 ? '' : ' unused'}`} title={tr('app.fromTheLatestStrategySimulation')} data-i18n-skip>{usage.uses > 0
                         ? (tr('app.simulatedPerRun', { usesPerRun: usage.usesPerRun }))
                         : (tr('app.unusedInSimulation'))}</em>}
+                      {bossMode === 'chimera' && rule.lastTurnBeforeBoss === true && <em className="sim-usage last-turn-tag" title={tr('app.lastTurnBeforeBossHint')}>{tr('app.lastTurnBeforeBossTag')}</em>}
                       {mismatches.length > 0 && <TargetTag kind="never" notes={mismatches.map((mismatch) => <MismatchNote key={`${mismatch.skillTypeId}:${mismatch.target}:${mismatch.position ?? ''}`}
                         mismatch={mismatch} hero={hero} heroes={heroes} outcome={action.type === 'defaultSkillPriority' ? 'autoFallback' : 'neverActs'} />)} />}</div>
                     <div className="form-pills">{bossMode === 'chimera' ? ruleForms(rule).slice(0, 4).map((form) => <span key={form} title={formLabel(form) ?? form}>{formShort(form) ?? form}</span>) : <span>{tr('app.wholeHydraBattle')}</span>}</div>
@@ -3462,6 +3475,7 @@ function App() {
         heroAvatar={heroAvatarOf}
         skillName={(heroTypeId, skillTypeId) => heroByRuntimeId(heroes, heroTypeId)?.skills.find((skill) => skill.typeId === skillTypeId)?.name ?? `${skillTypeId}`} />
       <TeamPicker language={language} open={teamPickerOpen} teamSize={teamSize} bossMode={bossMode}
+        catalogRevision={data?.catalogRevision}
         initial={{ heroTypeIds: config.team?.heroTypeIds ?? [], heroInstanceIds: config.team?.heroInstanceIds ?? [] }}
         loadRoster={loadRoster} loadHeroData={loadPickerHeroData} effects={effects}
         onClose={() => setTeamPickerOpen(false)} onApply={(chosen) => void applyStrategyTeam(chosen)}
@@ -3485,6 +3499,7 @@ function App() {
         </Dialog.Portal>
       </Dialog.Root>
     </div>
+    </HeroAvatarRevisionProvider>
     </I18nProvider>
   )
 }
